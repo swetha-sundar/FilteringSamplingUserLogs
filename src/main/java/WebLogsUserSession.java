@@ -7,7 +7,6 @@ import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
 
-
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
@@ -33,8 +32,8 @@ import java.util.*;
 /**
  *  WebLogUserSession : generates a user session from a list of impressions and leads (log entries).
  *  Joins the two different log entries into one session
- *  Performs Replicated join : Associates every zip field with its corresponding DMA
  *  Writes out multiple output files depending upon the user's behavior in the site
+ *  Performs filtering for different user type sessions
  */
 public class WebLogsUserSession extends Configured implements Tool {
 
@@ -45,15 +44,21 @@ public class WebLogsUserSession extends Configured implements Tool {
 
     public int run(String[] args) throws Exception {
         if (args.length != 4) {
-            System.err.println("Usage: WebLogsUserSession <input path1> <input path2> <output path> <percentage>");
+            System.err.println("Usage: WebLogsUserSession <input path1> <input path2> <output path> <filter_percentage>");
             return -1;
         }
 
         //Configuration object that has all the configuration details
         Configuration conf = getConf();
+        String[] appArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
+
+        // Obtain the filter percentage from the command line
+        String filter_percentage = appArgs[3];
+
+        // Set the filter percentage value in the configuration object
+        conf.set("filter_percentage", filter_percentage);
 
         Job job = new Job(conf, "WebLogsUserSession");
-        String[] appArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
 
         // Identify the JAR file to replicate to all machines.
         job.setJarByClass(WebLogsUserSession.class);
@@ -242,10 +247,15 @@ public class WebLogsUserSession extends Configured implements Tool {
         private String BOUNCER = "bouncer";
         private String BROWSER = "browser";
         private String SEARCHER = "searcher";
+        Double filter_percentage, filter_percentage_m;
+        private Random rands = new Random();
 
         @Override
         public void setup(Context context) {
             multipleOutputs = new MultipleOutputs(context);
+            String percentage = context.getConfiguration().get("filter_percentage");
+            filter_percentage = Double.parseDouble(percentage) / 100;
+            filter_percentage_m = Double.parseDouble(percentage) / 1000;
         }
 
         @Override
@@ -260,6 +270,9 @@ public class WebLogsUserSession extends Configured implements Tool {
 
             //Boolean that decides if the common attributes of the session have been set or not
             boolean hasSessionDetailsBeenSet= false;
+
+            // array of action names to match searcher's filter condition
+            ActionName[] action = {ActionName.VIEWED_CARFAX_REPORT, ActionName.VIEWED_CARFAX_REPORT_UNHOSTED};
 
             //User Id and the Api Key
             String user_id = key.toString().split(":")[0];
@@ -292,16 +305,14 @@ public class WebLogsUserSession extends Configured implements Tool {
             //Sort the impressions by time
             Collections.sort(impCollection,new ListComparatorUtil());
 
+            //Check if the user type is a searcher
             for (Impression impression : impCollection) {
-                if (impression.getImpressionType().equals(ImpressionType.SRP)) {
+                if (impression.getImpressionType() != ImpressionType.SRP) {
                     isSearcher = true;
-                }
-                else {
-                    isSearcher = false;
                     break;
                 }
-
             }
+
             //build the avro session object
             builder.setUserId(user_id);
             builder.setApiKey(api_key);
@@ -331,8 +342,25 @@ public class WebLogsUserSession extends Configured implements Tool {
 
             Text outputKey = key;
             Text outputValue = new Text(builder.build().toString());
-            //Emit the key and the generated user session avro value
-            multipleOutputs.write("userType", outputKey, outputValue, category);
+
+            //Emit the key and the generated user session avro value based on the category
+
+            if (category == SUBMITTER)
+                multipleOutputs.write("userType", outputKey, outputValue, category);
+            else if (category == SEARCHER) {
+                //Check to see if the searcher has performed the action (filtering condition)
+                if (hasPerformedAction(builder.getImpressions(), action)) {
+                    if (rands.nextDouble() < filter_percentage) {
+                        multipleOutputs.write("userType", outputKey, outputValue, category);
+                    }
+                }
+            }
+            else if (category == BROWSER && rands.nextDouble() < filter_percentage) {
+                multipleOutputs.write("userType", outputKey, outputValue, category);
+            }
+            else if (category == BOUNCER && rands.nextDouble() < filter_percentage_m) {
+                multipleOutputs.write("userType", outputKey, outputValue, category);
+            }
         }
 
         //Sets the session level values once
@@ -345,6 +373,19 @@ public class WebLogsUserSession extends Configured implements Tool {
                 return false;
             }
             return true;
+        }
+
+        //Function to see if the searcher has performed a particular action of interest
+        private boolean hasPerformedAction(List<Impression> impressions, ActionName[] actions) {
+            for(Impression impression :impressions) {
+                ActionName impActionName = impression.getActionName();
+                for (ActionName action : actions) {
+                    if (impActionName == action) {
+                        return true;
+                    }
+                }
+            }
+            return false;
         }
 
         //Closes the multiple output instance

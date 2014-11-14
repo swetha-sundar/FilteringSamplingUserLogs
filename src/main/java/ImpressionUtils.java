@@ -14,6 +14,7 @@ import java.util.Map;
  */
 public class ImpressionUtils {
 
+    static final int MAX = 99999999;
     //Fields in the Impressions
     protected static final String[] fields = {
             "uid", "apikey", "uagent", "res", "activex",
@@ -183,7 +184,7 @@ public class ImpressionUtils {
                 try {
                     impBuilder.setTotal(Integer.parseInt(values.get(fields[13])));
                 } catch (NumberFormatException e) {
-                    impBuilder.setTotal(-1);
+                    impBuilder.setTotal(MAX);
                 }
                 break;
             case 14:

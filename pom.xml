@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>WebLogParser</groupId>
-    <artifactId>WebLogParser</artifactId>
+    <groupId>WebLogsParser</groupId>
+    <artifactId>WebLogsParser</artifactId>
     <version>4.0</version>
     <description>Web Log Parser: Parses web logs, generates user sessions from the data</description>
 

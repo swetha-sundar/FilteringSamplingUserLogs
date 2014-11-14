@@ -17,9 +17,11 @@ public class ListComparatorUtil implements Comparator<Impression> {
         if (imp1.getTimestamp() < imp2.getTimestamp()) {
             return -1;
         }
-        else {
+        else if (imp1.getTimestamp() > imp2.getTimestamp()) {
             return 1;
         }
-
+        else {
+            return 0;
+        }
     }
 }
